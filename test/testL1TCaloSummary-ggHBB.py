@@ -53,10 +53,10 @@ process.load("L1Trigger.Run3Ntuplizer.l1BoostedJetStudies_cfi")
 process.maxEvents = cms.untracked.PSet( input = cms.untracked.int32(-1) )
 process.source = cms.Source("PoolSource",
                             fileNames = cms.untracked.vstring(
-				'file:/eos/user/p/pdas/L1Boosted/ggHbb/MiniAOD/RunIIAutumn18MiniAOD_21Dec_0_5300.root'
+				'file:/eos/user/p/pdas/L1Boosted/ggHtautau/MiniAOD/RunIIAutumn18MiniAOD_21Dec_0_5300.root'
 ),
                             secondaryFileNames = cms.untracked.vstring(
-				'file:/eos/user/p/pdas/L1Boosted/ggHbb/DR/RunIIAutumn18DRPremix_step1_21Dec_0_5300.root'
+				'file:/eos/user/p/pdas/L1Boosted/ggHtautau/DR/RunIIAutumn18DRPremix_step1_21Dec_0_5300.root'
                             )
 )
 
@@ -86,7 +86,7 @@ process.out = cms.OutputModule("PoolOutputModule",
 #Output
 process.TFileService = cms.Service(
 	"TFileService",
-	fileName = cms.string("l1TNtuple-ggHBB_test.root")
+	fileName = cms.string("l1TNtuple-ggHBB_taus.root")
 )
 
 process.p = cms.Path(process.l1tCaloLayer1Digis*process.simCaloStage2Layer1Digis*process.uct2016EmulatorDigis*process.l1NtupleProducer)
