@@ -80,6 +80,11 @@
 #include "DataFormats/HepMCCandidate/interface/GenParticle.h"
 #include "DataFormats/HepMCCandidate/interface/GenParticleFwd.h"
 
+// Adding for Vis Taus
+#include "TH1.h"
+#include "helpers.h"
+#include "DataFormats/PatCandidates/interface/Tau.h"
+
 using namespace l1t;
 using namespace l1tcalo;
 using namespace l1extra;
@@ -106,7 +111,7 @@ float getRecoEta(int ieta, short zside){
   float eta = -999;
   if(ieta<0 || ieta>(28*2)){
     std::cout<<"Error!!! towereta out of bounds in triggerGeometryTools.h "<<std::endl;
-    std::cout<<"ieta "<<ieta<<std::endl;
+    //std::cout<<"ieta "<<ieta<<std::endl;
     exit(0);
   }
   if(zside == 1)
@@ -115,7 +120,7 @@ float getRecoEta(int ieta, short zside){
     eta = towerEtaMap[ieta];
   else{
     std::cout<<"Error!!! zside out of bounds in triggerGeometryTools.h "<<std::endl;
-    std::cout<<"zside "<<zside<<std::endl;
+    //std::cout<<"zside "<<zside<<std::endl;
     exit(0);
   }
   return eta;
@@ -205,12 +210,28 @@ private:
   edm::EDGetTokenT<vector<reco::CaloJet> > jetSrc_;
   edm::EDGetTokenT<vector<pat::Jet> > jetSrcAK8_;
   edm::EDGetTokenT<reco::GenParticleCollection> genSrc_;
+  edm::EDGetTokenT <pat::TauCollection> recoTauToken_;
 
   edm::EDGetTokenT<BXVector<l1t::Jet>> stage2JetToken_;
   edm::EDGetTokenT<BXVector<l1t::Tau>> stage2TauToken_;
   edm::EDGetTokenT<vector<l1extra::L1JetParticle>> l1BoostedToken_;
   edm::EDGetTokenT<L1CaloRegionCollection> regionToken_;
+
+  //adding tokens for reco, gen, vis tau pt
+  
+  
   //const L1TCaloLayer1FetchLUTsTokens lutsTokens;
+
+  typedef std::vector<reco::GenParticle> GenParticleCollectionType;
+
+  struct visTau{
+    reco::Candidate::LorentzVector p4;
+    int decayMode;
+  };
+
+  std::vector<float> genTauPts;
+  std::vector<float> recoTauPts;
+  std::vector<float> visTauPts;
 
   std::vector<std::array<std::array<std::array<uint32_t, nEtBins>, nCalSideBins>, nCalEtaBins> > ecalLUT;
   std::vector<std::array<std::array<std::array<uint32_t, nEtBins>, nCalSideBins>, nCalEtaBins> > hcalLUT;
@@ -221,12 +242,18 @@ private:
   std::vector<unsigned int> hfPhiMap;
 
   TH1F* nEvents;
+  TH1D* histo_genTauPt;
+  TH1D* histo_recoTauPt;
+  TH1D* histo_visTauPt;
+  TH1D* histo_allTauPt;
 
   int run, lumi, event;
 
   double genPt_1, genEta_1, genPhi_1, genM_1, genDR;
   int genId, genMother;
   double recoPt_1, recoEta_1, recoPhi_1;
+  double visPt, visEta, visPhi;
+  int decayMode;
   double l1Pt_1, l1Eta_1, l1Phi_1;
   double seedPt_1, seedEta_1, seedPhi_1;
   
@@ -285,6 +312,7 @@ BoostedJetStudies::BoostedJetStudies(const edm::ParameterSet& iConfig) :
   jetSrc_(    consumes<vector<reco::CaloJet> >(iConfig.getParameter<edm::InputTag>("recoJets"))),
   jetSrcAK8_( consumes<vector<pat::Jet> >(iConfig.getParameter<edm::InputTag>("recoJetsAK8"))),
   genSrc_( consumes<reco::GenParticleCollection> (iConfig.getParameter<edm::InputTag>( "genParticles"))),
+  recoTauToken_(consumes<pat::TauCollection>(edm::InputTag("slimmedTaus", "","PAT"  ))),
   stage2JetToken_(consumes<BXVector<l1t::Jet>>( edm::InputTag("caloStage2Digis","Jet","RECO"))),
   stage2TauToken_(consumes<BXVector<l1t::Tau>>( edm::InputTag("caloStage2Digis","Tau","RECO"))),
   l1BoostedToken_(consumes<vector<l1extra::L1JetParticle>>( edm::InputTag("uct2016EmulatorDigis","Boosted",""))),
@@ -327,6 +355,10 @@ BoostedJetStudies::BoostedJetStudies(const edm::ParameterSet& iConfig) :
 
   recoPt_      = iConfig.getParameter<double>("recoPtCut");
   nEvents      = tfs_->make<TH1F>( "nEvents"  , "nEvents", 2,  0., 1. );
+  histo_genTauPt = tfs_->make<TH1D>("genTauPt" , "genTauPt" , 100 , 0 , 100);
+  histo_recoTauPt = tfs_->make<TH1D>("recoTauPt" , "recoTauPt" , 100 , 0 , 100);
+  histo_visTauPt = tfs_->make<TH1D>("visTauPt" , "visTauPt" , 100 , 0 , 100);
+  histo_allTauPt = tfs_->make<TH1D>("allTauPt", "allTauPt", 100, 0, 100);
   efficiencyTree = tfs_->make<TTree>("efficiencyTree", "Gen Matched Jet Tree ");
   createBranches(efficiencyTree);
 }
@@ -351,6 +383,10 @@ BoostedJetStudies::~BoostedJetStudies() {
 void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& es )
 {
   using namespace edm;
+
+  genTauPts.clear();
+  recoTauPts.clear();
+  visTauPts.clear();
 
   nEvents->Fill(1);
   run = evt.id().run();
@@ -685,9 +721,9 @@ void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& e
     allL1Signals.push_back(isSignal);
   }
 
-  edm::Handle<reco::GenParticleCollection> genParticles;
-  if(evt.getByToken(genSrc_, genParticles)){//Begin Getting Gen Particles
-    for (reco::GenParticleCollection::const_iterator genparticle = genParticles->begin(); genparticle != genParticles->end(); genparticle++){
+  edm::Handle<reco::GenParticleCollection> genParticleHandle;
+  if(evt.getByToken(genSrc_, genParticleHandle)){//Begin Getting Gen Particles
+    for (reco::GenParticleCollection::const_iterator genparticle = genParticleHandle->begin(); genparticle != genParticleHandle->end(); genparticle++){
       double DR = reco::deltaR(recoEta_1, recoPhi_1, genparticle->eta(), genparticle->phi());
       if (DR < genDR && genparticle->status() > 21 && genparticle->status() < 41){
         genDR = DR;
@@ -700,6 +736,113 @@ void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& e
       }
     }
   }
+
+  // -------------COMPARE RECO AND GEN----------
+  // Get genParticles
+  //edm::Handle<GenParticleCollectionType> genParticleHandle;
+  /*if(!evt.getByToken(genSrc_,genParticleHandle))
+    std::cout<<"No gen Particles Found "<<std::endl;
+  else
+    std::cout<<"Gen Particles size "<<genParticleHandle->size()<<std::endl; */
+
+  std::vector<reco::GenParticle> genTaus;
+  std::vector<reco::GenParticle> genPiZeros;
+  std::vector<reco::GenParticle> genPiPluss;
+  std::vector<reco::GenParticle> genParticles;
+
+  for(unsigned int i = 0; i< genParticleHandle->size(); i++){
+    edm::Ptr<reco::GenParticle> ptr(genParticleHandle, i);
+    genParticles.push_back(*ptr);
+
+    if(abs(ptr->pdgId())==111 && abs(ptr->eta()<1.74)){
+      genPiZeros.push_back(*ptr);
+      //std::cout<<"Found PiZero PDGID 111 pt: "<<ptr->pt()<<" eta: "<<ptr->eta()<<" phi: "<<ptr->phi()<<std::endl;
+    }
+    if(abs(ptr->pdgId())==211 && abs(ptr->eta()<1.74)){
+      genPiPluss.push_back(*ptr);
+      //std::cout<<"Found PiPlus PDGID 111 pt: "<<ptr->pt()<<" eta: "<<ptr->eta()<<" phi: "<<ptr->phi()<<std::endl;
+    }
+    if(abs(ptr->pdgId())==15){
+      genTaus.push_back(*ptr);
+    }
+  }
+
+   std::vector<visTau> GenOneProngTaus;
+   std::vector<visTau> GenOneProngPi0Taus;
+   std::vector<visTau> GenThreeProngTaus;
+   //Find and Sort the 1 Prong, 1 Prong + pi0 and 3 Prong Taus
+
+   //std::cout<<"starting gen taus"<<std::endl;
+
+  for(auto genTau: genTaus){
+    reco::Candidate::LorentzVector visGenTau= getVisMomentum(&genTau, &genParticles);
+    visTau Temp;
+    visPt = visGenTau.pt();
+    visEta = visGenTau.eta();
+    visPhi = visGenTau.phi();
+    decayMode = GetDecayMode(&genTau);
+    Temp.p4 = visGenTau;
+    Temp.decayMode = decayMode;
+
+    //std::cout<<"Tau Decay Mode "<<decayMode<<std::endl;
+    //std::cout<<"tau vis pt: "<<visPt<<" visEta: "<<visEta<<" visPhi: "<<visPhi<<std::endl;
+
+    if(decayMode >21 ){
+      //std::cout<<"found 3 prong tau: "<<decayMode<<std::endl;
+      GenThreeProngTaus.push_back(Temp);
+    }
+
+    if(decayMode == 10 ){
+      GenOneProngTaus.push_back(Temp);
+    }
+
+    if(decayMode > 10 && decayMode < 20 ){
+      GenOneProngPi0Taus.push_back(Temp);
+    }
+  }
+
+  //PLOT RECO
+  for (const auto& recoTau : evt.get(recoTauToken_)) {
+    float recoTauPt = recoTau.pt();
+    //cout<<"recoTauPt = "<<recoTauPt<<endl;
+    for (const auto& genTau : genTaus){
+      double deltaR = DeltaR(recoTau, genTau);
+      if (deltaR < 0.4){
+        histo_recoTauPt->Fill(recoTauPt);
+        recoTauPts.push_back(recoTauPt);
+      }
+    }
+    histo_allTauPt->Fill(recoTauPt);
+    for (auto i: recoTauPts){
+      //cout << i << ' ';
+    }
+  }  
+
+  //PLOT GEN
+  for (const auto& genTau : genTaus) {
+    float genTauPt = genTau.pt();
+    //cout<<"genTauPt = "<<genTauPt<<endl;
+    histo_genTauPt->Fill(genTauPt);
+    histo_allTauPt->Fill(genTauPt);
+    genTauPts.push_back(genTauPt);
+    for (auto i: genTauPts){
+    //cout << i << ' ';
+    }
+  }
+
+  //PLOT VIS
+  for(auto genTau: genTaus){
+    reco::Candidate::LorentzVector visGenTau= getVisMomentum(&genTau, &genParticles);
+    float visTauPt = visGenTau.pt();
+    //cout<<"visTauPt = "<<visTauPt<<endl;
+    histo_visTauPt->Fill(visTauPt);
+    histo_allTauPt->Fill(visTauPt);
+    visTauPts.push_back(visTauPt);
+    for (auto i: visTauPts){
+      //cout << i << ' ';
+    }
+  }
+
   efficiencyTree->Fill();
   inputRegions.clear();
 }
@@ -754,7 +897,9 @@ void BoostedJetStudies::createBranches(TTree *tree){
     tree->Branch("jetRegionEt",      &jetRegionEt);
     tree->Branch("jetRegionEGVeto",  &jetRegionEGVeto);
     tree->Branch("jetRegionTauVeto", &jetRegionTauVeto );
-
+    tree->Branch("recoTauPts", &recoTauPts);
+    tree->Branch("genTauPts", &genTauPts);
+    tree->Branch("visTauPts", &visTauPts);
   }
 
 
