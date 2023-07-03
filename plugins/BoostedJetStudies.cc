@@ -806,8 +806,8 @@ void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& e
     float recoTauPt = recoTau.pt();
     //cout<<"recoTauPt = "<<recoTauPt<<endl;
     for (const auto& genTau : genTaus){
-      double deltaR = DeltaR(&recoTau, &genTau);
-      if (deltaR < 0.4){
+      //double deltaR = DeltaR(&recoTau, &genTau);
+      if (reco::deltaR(genTau, recoTau)<0.4){
         histo_recoTauPt->Fill(recoTauPt);
         recoTauPts.push_back(recoTauPt);
       }
