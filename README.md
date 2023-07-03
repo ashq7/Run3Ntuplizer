@@ -16,7 +16,8 @@ scram b -j 12
 cd L1Trigger/Run3Ntuplizer/test
 
 ## to run boosted ggHbb events
-cmsRun testL1TCaloSummary-ggHbb.py
+cmsRun testL1TCaloSummary-ggHBB.py
+## note capital BB!
 
 
 ```
