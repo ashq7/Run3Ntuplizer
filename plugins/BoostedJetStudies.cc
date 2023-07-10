@@ -110,7 +110,7 @@ float towerPhiMap[72]=
 float getRecoEta(int ieta, short zside){
   float eta = -999;
   if(ieta<0 || ieta>(28*2)){
-    std::cout<<"Error!!! towereta out of bounds in triggerGeometryTools.h "<<std::endl;
+    //std::cout<<"Error!!! towereta out of bounds in triggerGeometryTools.h "<<std::endl;
     //std::cout<<"ieta "<<ieta<<std::endl;
     exit(0);
   }
@@ -119,7 +119,7 @@ float getRecoEta(int ieta, short zside){
   else if(zside == -1)
     eta = towerEtaMap[ieta];
   else{
-    std::cout<<"Error!!! zside out of bounds in triggerGeometryTools.h "<<std::endl;
+    //std::cout<<"Error!!! zside out of bounds in triggerGeometryTools.h "<<std::endl;
     //std::cout<<"zside "<<zside<<std::endl;
     exit(0);
   }
@@ -232,6 +232,7 @@ private:
   std::vector<float> genTauPts;
   std::vector<float> recoTauPts;
   std::vector<float> visTauPts;
+  std::vector<float> deltaRs;
 
   std::vector<std::array<std::array<std::array<uint32_t, nEtBins>, nCalSideBins>, nCalEtaBins> > ecalLUT;
   std::vector<std::array<std::array<std::array<uint32_t, nEtBins>, nCalSideBins>, nCalEtaBins> > hcalLUT;
@@ -250,12 +251,16 @@ private:
   int run, lumi, event;
 
   double genPt_1, genEta_1, genPhi_1, genM_1, genDR;
-  int genId, genMother;
+  int genId, genMother, genDaughter;
   double recoPt_1, recoEta_1, recoPhi_1;
   double visPt, visEta, visPhi;
   int decayMode;
   double l1Pt_1, l1Eta_1, l1Phi_1;
   double seedPt_1, seedEta_1, seedPhi_1;
+
+  //reco gen matching
+  double genTauPt_1, genTauPt_2, genTauEta_1, genTauEta_2, genTauPhi_1, genTauPhi_2;
+  double genDeltaR, deltaR;
   
   int l1NthJet_1;
   int recoNthJet_1;
@@ -387,6 +392,13 @@ void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& e
   genTauPts.clear();
   recoTauPts.clear();
   visTauPts.clear();
+  deltaR=-99;
+  genTauPt_1=-99;
+  genTauEta_1=-99;
+  genTauPhi_1=-99;
+  genTauPt_2=-99;
+  genTauEta_2=-99;
+  genTauPhi_2=-99;
 
   nEvents->Fill(1);
   run = evt.id().run();
@@ -610,7 +622,7 @@ void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& e
   if(evt.getByToken(jetSrc_, jets)){//Begin Getting Reco Jets
     for (const reco::CaloJet &jet : *jets) {
       if(jet.pt() > recoPt_ ) {
-	goodJets.push_back(jet);
+  goodJets.push_back(jet);
       }
     }
   }
@@ -729,6 +741,7 @@ void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& e
         genDR = DR;
         genId = genparticle->pdgId();
         genMother = genparticle->motherRef(0)->pdgId();
+        genDaughter = genparticle->daughterRef(0)->pdgId();
         genPt_1 = genparticle->pt();
         genEta_1 = genparticle->eta();
         genPhi_1 = genparticle->phi();
@@ -750,6 +763,9 @@ void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& e
   std::vector<reco::GenParticle> genPiPluss;
   std::vector<reco::GenParticle> genParticles;
 
+  std::vector<reco::GenParticle> genTauHiggses;
+  std::vector<reco::GenParticle> genTauHadronics;
+
   for(unsigned int i = 0; i< genParticleHandle->size(); i++){
     edm::Ptr<reco::GenParticle> ptr(genParticleHandle, i);
     genParticles.push_back(*ptr);
@@ -764,6 +780,7 @@ void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& e
     }
     if(abs(ptr->pdgId())==15){
       genTaus.push_back(*ptr);
+      std::cout<<"size of genTaus at push back: "<<genTaus.size()<<std::endl;
     }
   }
 
@@ -775,6 +792,7 @@ void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& e
    //std::cout<<"starting gen taus"<<std::endl;
 
   for(auto genTau: genTaus){
+    std::cout<<"gen Taus auto working"<<std::endl;
     reco::Candidate::LorentzVector visGenTau= getVisMomentum(&genTau, &genParticles);
     visTau Temp;
     visPt = visGenTau.pt();
@@ -800,6 +818,50 @@ void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& e
       GenOneProngPi0Taus.push_back(Temp);
     }
   }
+  std::cout<<"outside gen tau loop"<<std::endl;
+  std::cout<<"size of genTaus before tau matching loop "<<genTaus.size()<<std::endl;
+  //PLOT GEN
+  for (const auto& genTau : genTaus) {
+    genMother = genTau.motherRef(0)->pdgId();
+    std::cout<<"Mother PDG ID: "<<genMother<<std::endl;
+    //leading mother always higgs?
+    if (abs(genMother)==25){
+      genTauHiggses.push_back(genTau);
+      std::cout<<"new Higgs Tau"<<std::endl;
+      std::cout<<"size of Higgs Tau vector: "<<genTauHiggses.size()<<std::endl;
+      if (genTauHiggses.size()==2){
+        deltaR = reco::deltaR(genTauHiggses.at(0), genTauHiggses.at(1));
+        std::cout<<"deltaR: "<<deltaR<<std::endl;
+      }
+      for(const auto& genTauHiggs : genTauHiggses){
+        //question: is lepton always leading daughter?
+        genDaughter = genTauHiggs.daughterRef(0)->pdgId();
+        std::cout<<genDaughter<<std::endl;
+        if (abs(genDaughter) != 11 && abs(genDaughter) != 13){
+          genTauHadronics.push_back(genTauHiggs);
+          std::cout<<"Hadronic taus"<<std::endl;
+        }
+      }
+      float genTauPt = genTau.pt();
+      histo_genTauPt->Fill(genTauPt);
+      genTauPts.push_back(genTauPt);
+    }
+    //question: is lepton always leading?
+    if (genTauHadronics.size()>0){
+     genTauPt_1=genTauHadronics.at(0).pt();
+     genTauEta_1=genTauHadronics.at(0).eta();
+     genTauPhi_1=genTauHadronics.at(0).phi();
+     std::cout<<"first tau"<<std::endl;
+    }
+
+    if (genTauHadronics.size()>1){
+     genTauPt_2=genTauHadronics.at(1).pt();
+     genTauEta_2=genTauHadronics.at(1).eta();
+     genTauPhi_2=genTauHadronics.at(1).phi();
+     std::cout<<"second tau"<<std::endl;
+    }
+
+  }
 
   //PLOT RECO
   for (const auto& recoTau : evt.get(recoTauToken_)) {
@@ -807,9 +869,11 @@ void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& e
     //cout<<"recoTauPt = "<<recoTauPt<<endl;
     for (const auto& genTau : genTaus){
       //double deltaR = DeltaR(&recoTau, &genTau);
+      //make pairs of gen/reco 
       if (reco::deltaR(genTau, recoTau)<0.4){
         histo_recoTauPt->Fill(recoTauPt);
         recoTauPts.push_back(recoTauPt);
+        //single gen can't match to multiple offline(reco)
       }
     }
     histo_allTauPt->Fill(recoTauPt);
@@ -817,18 +881,6 @@ void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& e
       //cout << i << ' ';
     }
   }  
-
-  //PLOT GEN
-  for (const auto& genTau : genTaus) {
-    float genTauPt = genTau.pt();
-    //cout<<"genTauPt = "<<genTauPt<<endl;
-    histo_genTauPt->Fill(genTauPt);
-    histo_allTauPt->Fill(genTauPt);
-    genTauPts.push_back(genTauPt);
-    for (auto i: genTauPts){
-    //cout << i << ' ';
-    }
-  }
 
   //PLOT VIS
   for(auto genTau: genTaus){
@@ -853,6 +905,13 @@ void BoostedJetStudies::zeroOutAllVariables(){
   recoPt_1=-99; recoEta_1=-99; recoPhi_1=-99; recoNthJet_1=-99;
   l1Pt_1=-99; l1Eta_1=-99; l1Phi_1=-99; l1NthJet_1=-99;
   recoPt_=-99;
+  deltaR=-99;
+  genTauPt_1=-99;
+  genTauEta_1=-99;
+  genTauPhi_1=-99;
+  genTauPt_2=-99;
+  genTauEta_2=-99;
+  genTauPhi_2=-99;
 }
 
 void BoostedJetStudies::createBranches(TTree *tree){
@@ -900,6 +959,13 @@ void BoostedJetStudies::createBranches(TTree *tree){
     tree->Branch("recoTauPts", &recoTauPts);
     tree->Branch("genTauPts", &genTauPts);
     tree->Branch("visTauPts", &visTauPts);
+    tree->Branch("deltaR", &deltaR);
+    tree->Branch("genTauPt_1",        &genTauPt_1,       "genTauPt_1/D"); 
+    tree->Branch("genTauEta_1",        &genTauEta_1,       "genTauEta_1/D");
+    tree->Branch("genTauPhi_1",        &genTauPhi_1,       "genTauPhi_1/D");
+    tree->Branch("genTauPt_2",        &genTauPt_2,       "genTauPt_2/D");
+    tree->Branch("genTauEta_2",        &genTauEta_2,       "genTauEta_2/D");
+    tree->Branch("genTauPhi_2",        &genTauPhi_2,       "genTauPhi_2/D");
   }
 
 
