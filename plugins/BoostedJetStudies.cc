@@ -859,18 +859,19 @@ void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& e
      genTauEta_2=genTauHadronics.at(1).eta();
      genTauPhi_2=genTauHadronics.at(1).phi();
      std::cout<<"second tau"<<std::endl;
+     for(const auto& recoTau : evt.get(recoTauToken_)){
+      double DR = reco::deltaR(genTauHadronic, recoTau);
+      if (DR < matchDR){
+        matchDR = DR;
+      }
+     }
     }
 
   }
 
   //PLOT RECO
   for (const auto& recoTau : evt.get(recoTauToken_)) {
-    for(const auto& genTauHadronic : genTauHadronics){
-      double DR = reco::deltaR(genTauHadronic, recoTau);
-      if (DR < matchDR){
-        matchDR = DR;
-      }
-     }
+    
     float recoTauPt = recoTau.pt();
     //cout<<"recoTauPt = "<<recoTauPt<<endl;
     for (const auto& genTau : genTaus){
