@@ -865,6 +865,12 @@ void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& e
 
   //PLOT RECO
   for (const auto& recoTau : evt.get(recoTauToken_)) {
+    for(const auto& genTauHadronic : genTauHadronics){
+      double DR = reco::deltaR(genTauHadronic, recoTau);
+      if (DR < matchDR){
+        matchDR = DR;
+      }
+     }
     float recoTauPt = recoTau.pt();
     //cout<<"recoTauPt = "<<recoTauPt<<endl;
     for (const auto& genTau : genTaus){
@@ -912,6 +918,7 @@ void BoostedJetStudies::zeroOutAllVariables(){
   genTauPt_2=-99;
   genTauEta_2=-99;
   genTauPhi_2=-99;
+  matchDR=99;
 }
 
 void BoostedJetStudies::createBranches(TTree *tree){
