@@ -859,14 +859,21 @@ void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& e
      genTauEta_2=genTauHadronics.at(1).eta();
      genTauPhi_2=genTauHadronics.at(1).phi();
      std::cout<<"second tau"<<std::endl;
-     for(const auto& recoTau : evt.get(recoTauToken_)){
-      double DR = reco::deltaR(genTauHadronic, recoTau);
-      if (DR < matchDR){
-        matchDR = DR;
-      }
-     }
     }
 
+    for (const auto& genTauHadronic : genTauHadronics){
+      int index = 0;
+      for(const auto& recoTau : evt.get(recoTauToken_); index ++){
+        double DR = reco::deltaR(genTauHadronic, recoTau);
+        if (DR < matchDR){
+          matchDR = DR;
+          if(index == recoTauToken_.size()){
+            //is token vector?
+            matchedRecoTaus.push_back(recoTau);
+          }
+        }
+      }
+    }
   }
 
   //PLOT RECO
