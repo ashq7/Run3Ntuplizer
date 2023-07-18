@@ -224,9 +224,10 @@ private:
 
   typedef std::vector<reco::GenParticle> GenParticleCollectionType;
 
-  struct visTau{
-    reco::Candidate::LorentzVector p4;
-    int decayMode;
+  class GenVisibleTau{
+    public:
+      reco::Candidate::LorentzVector p4;
+      int decayMode;
   };
 
   std::vector<float> genTauPts;
@@ -247,20 +248,22 @@ private:
   TH1D* histo_recoTauPt;
   TH1D* histo_visTauPt;
   TH1D* histo_allTauPt;
+  TH1D* histo_recoMatchedTauPt;
 
   int run, lumi, event;
 
   double genPt_1, genEta_1, genPhi_1, genM_1, genDR;
   int genId, genMother, genDaughter;
   double recoPt_1, recoEta_1, recoPhi_1;
-  double visPt, visEta, visPhi;
+  double visGenPt, visGenEta, visGenPhi;
   int decayMode;
   double l1Pt_1, l1Eta_1, l1Phi_1;
   double seedPt_1, seedEta_1, seedPhi_1;
 
   //reco gen matching
   double genTauPt_1, genTauPt_2, genTauEta_1, genTauEta_2, genTauPhi_1, genTauPhi_2;
-  double genDeltaR, deltaR;
+  double visGenTauPt_1, visGenTauPt_2, visGenTauEta_1, visGenTauEta_2, visGenTauPhi_1, visGenTauPhi_2;
+  double deltaR, matchDeltaR, visGenDeltaR;
   
   int l1NthJet_1;
   int recoNthJet_1;
@@ -276,6 +279,10 @@ private:
   std::vector<TLorentzVector> *tauseed  = new std::vector<TLorentzVector>;
   std::vector<TLorentzVector> *ak8Jets  = new std::vector<TLorentzVector>;
   std::vector<TLorentzVector> *subJets  = new std::vector<TLorentzVector>;
+  std::vector<LorentzVector> *matchedRecoTaus = new std::vector<LorentzVector>;
+
+  LorentzVector matchedRecoTau_1;
+  LorentzVector matchedRecoTau_2;
 
   uint32_t nPumBins;
 
@@ -364,6 +371,7 @@ BoostedJetStudies::BoostedJetStudies(const edm::ParameterSet& iConfig) :
   histo_recoTauPt = tfs_->make<TH1D>("recoTauPt" , "recoTauPt" , 100 , 0 , 100);
   histo_visTauPt = tfs_->make<TH1D>("visTauPt" , "visTauPt" , 100 , 0 , 100);
   histo_allTauPt = tfs_->make<TH1D>("allTauPt", "allTauPt", 100, 0, 100);
+  histo_recoMatchedTauPt = tfs_->make<TH1D>("recoMatchedTauPt", "recoMatchedTauPt", 100, 0, 100);
   efficiencyTree = tfs_->make<TTree>("efficiencyTree", "Gen Matched Jet Tree ");
   createBranches(efficiencyTree);
 }
@@ -393,6 +401,8 @@ void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& e
   recoTauPts.clear();
   visTauPts.clear();
   deltaR=-99;
+  matchDeltaR = -99;
+  visGenDeltaR=-99;
   genTauPt_1=-99;
   genTauEta_1=-99;
   genTauPhi_1=-99;
@@ -440,7 +450,7 @@ void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& e
   if (!evt.getByToken(regionToken_, regionCollection))
     edm::LogError("L1TCaloSummary") << "UCT: Failed to get regions from region collection!";
   evt.getByToken(regionToken_, regionCollection);
-  for (const L1CaloRegion& i : *regionCollection) {  //for (auto i : rgnCollection) {
+  for (const L1CaloRegion& i : *regionCollection) {  //for (auto i : rgnCollection) 
     UCTRegionIndex r = g.getUCTRegionIndexFromL1CaloRegion(i.gctEta(), i.gctPhi());
     UCTTowerIndex t = g.getUCTTowerIndexFromL1CaloRegion(r, i.raw());
     uint32_t absCaloEta = std::abs(t.first);
@@ -763,9 +773,15 @@ void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& e
   std::vector<reco::GenParticle> genPiPluss;
   std::vector<reco::GenParticle> genParticles;
 
+
   std::vector<reco::GenParticle> genTauHiggses;
   std::vector<reco::GenParticle> genTauHadronics;
+  std::vector<reco::GenParticle> visGenTaus;
+  std::vector<reco::GenParticle> visGenHadronicTaus;
+  //std::vector<reco::GenParticle> matchedRecoTaus;
 
+
+  // (1) Build gen taus
   for(unsigned int i = 0; i< genParticleHandle->size(); i++){
     edm::Ptr<reco::GenParticle> ptr(genParticleHandle, i);
     genParticles.push_back(*ptr);
@@ -784,44 +800,36 @@ void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& e
     }
   }
 
-   std::vector<visTau> GenOneProngTaus;
-   std::vector<visTau> GenOneProngPi0Taus;
-   std::vector<visTau> GenThreeProngTaus;
-   //Find and Sort the 1 Prong, 1 Prong + pi0 and 3 Prong Taus
-
-   //std::cout<<"starting gen taus"<<std::endl;
+  std::vector<GenVisibleTau> GenOneProngTaus;
+  std::vector<GenVisibleTau> GenOneProngPi0Taus;
+  std::vector<GenVisibleTau> GenThreeProngTaus;
+  // (2) Find and Sort the 1 Prong, 1 Prong + pi0 and 3 Prong Taus
 
   for(auto genTau: genTaus){
     std::cout<<"gen Taus auto working"<<std::endl;
-    reco::Candidate::LorentzVector visGenTau= getVisMomentum(&genTau, &genParticles);
-    visTau Temp;
-    visPt = visGenTau.pt();
-    visEta = visGenTau.eta();
-    visPhi = visGenTau.phi();
-    decayMode = GetDecayMode(&genTau);
-    Temp.p4 = visGenTau;
-    Temp.decayMode = decayMode;
-
-    //std::cout<<"Tau Decay Mode "<<decayMode<<std::endl;
-    //std::cout<<"tau vis pt: "<<visPt<<" visEta: "<<visEta<<" visPhi: "<<visPhi<<std::endl;
+    GenVisibleTau temp;
+    temp.p4 = getVisMomentum(&genTau, &genParticles);
+    temp.decayMode = GetDecayMode(&genTau);
 
     if(decayMode >21 ){
       //std::cout<<"found 3 prong tau: "<<decayMode<<std::endl;
-      GenThreeProngTaus.push_back(Temp);
+      GenThreeProngTaus.push_back(temp);
     }
 
     if(decayMode == 10 ){
-      GenOneProngTaus.push_back(Temp);
+      GenOneProngTaus.push_back(temp);
     }
 
     if(decayMode > 10 && decayMode < 20 ){
-      GenOneProngPi0Taus.push_back(Temp);
+      GenOneProngPi0Taus.push_back(temp);
     }
   }
-  std::cout<<"outside gen tau loop"<<std::endl;
-  std::cout<<"size of genTaus before tau matching loop "<<genTaus.size()<<std::endl;
+
+  // (3) Build std::vector<reco::GenParticles> of taus coming from the Higgs
   //PLOT GEN
   for (const auto& genTau : genTaus) {
+    histo_genTauPt->Fill(genTau.pt());
+
     genMother = genTau.motherRef(0)->pdgId();
     std::cout<<"Mother PDG ID: "<<genMother<<std::endl;
     //leading mother always higgs?
@@ -829,56 +837,27 @@ void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& e
       genTauHiggses.push_back(genTau);
       std::cout<<"new Higgs Tau"<<std::endl;
       std::cout<<"size of Higgs Tau vector: "<<genTauHiggses.size()<<std::endl;
-      if (genTauHiggses.size()==2){
-        deltaR = reco::deltaR(genTauHiggses.at(0), genTauHiggses.at(1));
-        std::cout<<"deltaR: "<<deltaR<<std::endl;
-      }
-      for(const auto& genTauHiggs : genTauHiggses){
-        //question: is lepton always leading daughter?
-        genDaughter = genTauHiggs.daughterRef(0)->pdgId();
-        std::cout<<genDaughter<<std::endl;
-        if (abs(genDaughter) != 11 && abs(genDaughter) != 13){
-          genTauHadronics.push_back(genTauHiggs);
-          std::cout<<"Hadronic taus"<<std::endl;
-        }
-      }
-      float genTauPt = genTau.pt();
-      histo_genTauPt->Fill(genTauPt);
-      genTauPts.push_back(genTauPt);
-    }
-    //question: is lepton always leading?
-    if (genTauHadronics.size()>0){
-     genTauPt_1=genTauHadronics.at(0).pt();
-     genTauEta_1=genTauHadronics.at(0).eta();
-     genTauPhi_1=genTauHadronics.at(0).phi();
-     std::cout<<"first tau"<<std::endl;
     }
 
-    if (genTauHadronics.size()>1){
-     genTauPt_2=genTauHadronics.at(1).pt();
-     genTauEta_2=genTauHadronics.at(1).eta();
-     genTauPhi_2=genTauHadronics.at(1).phi();
-     std::cout<<"second tau"<<std::endl;
-    }
-
-    for (const auto& genTauHadronic : genTauHadronics){
-      int index = 0;
-      for(const auto& recoTau : evt.get(recoTauToken_); index ++){
-        double DR = reco::deltaR(genTauHadronic, recoTau);
-        if (DR < matchDR){
-          matchDR = DR;
-          if(index == recoTauToken_.size()){
-            //is token vector?
-            matchedRecoTaus.push_back(recoTau);
-          }
-        }
-      }
+  }
+  if (genTauHiggses.size() == 2){
+    deltaR = reco::deltaR(genTauHiggses.at(0), genTauHiggses.at(1));
+    std::cout<<"deltaR: "<<deltaR<<std::endl;
+  }
+  
+  for(const auto& genTauHiggs : genTauHiggses){
+    //question: is lepton always leading daughter?
+    genDaughter = genTauHiggs.daughterRef(0)->pdgId();
+    std::cout<<genDaughter<<std::endl;
+    if (abs(genDaughter) != 11 && abs(genDaughter) != 13){
+      genTauHadronics.push_back(genTauHiggs);
+      std::cout<<"Hadronic taus"<<std::endl;
     }
   }
 
+  // (4) Get reco tau properties
   //PLOT RECO
   for (const auto& recoTau : evt.get(recoTauToken_)) {
-    
     float recoTauPt = recoTau.pt();
     //cout<<"recoTauPt = "<<recoTauPt<<endl;
     for (const auto& genTau : genTaus){
@@ -897,18 +876,63 @@ void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& e
   }  
 
   //PLOT VIS
-  for(auto genTau: genTaus){
-    reco::Candidate::LorentzVector visGenTau= getVisMomentum(&genTau, &genParticles);
-    float visTauPt = visGenTau.pt();
-    //cout<<"visTauPt = "<<visTauPt<<endl;
-    histo_visTauPt->Fill(visTauPt);
-    histo_allTauPt->Fill(visTauPt);
-    visTauPts.push_back(visTauPt);
-    for (auto i: visTauPts){
-      //cout << i << ' ';
+  // (5) Loop over gen taus, check that they're from the Higgs (and that they decay hadronically - may be redundant)
+  // If this is true, perform deltaR matching with the reco taus 
+  for (auto visGenTau: visGenTaus){
+    // reco::Candidate::LorentzVector visGenTau= getVisMomentum(&genTau, &genParticles);
+    // visGenTaus.push_back(visGenTau);
+
+    // float visTauPt = visGenTau.pt();
+    // histo_visTauPt->Fill(visTauPt);
+    // visTauPts.push_back(visTauPt);
+
+    // for (const auto& visGenTau: visGenTaus){
+    int visGenMother = visGenTau.motherRef(0)->pdgId();
+    int visGenDaughter = visGenTau.daughterRef(0)->pdgId();
+    if (abs(visGenMother)==25 && abs(genDaughter) != 11 && abs(genDaughter) != 13){
+      visGenHadronicTaus.push_back(visGenTau);
+      if (genTauHiggses.size()==2){
+        visGenDeltaR = reco::deltaR(visGenHadronicTaus.at(0), visGenHadronicTaus.at(1));
+      }
+    }
+    int matchIndex = -99;
+    if (visGenHadronicTaus.size()>0){
+      //visGenTau_1 = visGenHadronicTaus.at(0);
+      visGenTauPt_1= visGenHadronicTaus.at(0).pt();
+      visGenTauEta_1= visGenHadronicTaus.at(0).eta();
+      visGenTauPhi_1= visGenHadronicTaus.at(0).phi();
+
+      int index = 0;
+      
+      for(const auto& recoTau : evt.get(recoTauToken_)){
+        double DR = reco::deltaR(visGenHadronicTaus.at(0), recoTau);
+        if (DR < matchDeltaR){
+          matchDeltaR = DR;
+          matchIndex = index;
+          matchedRecoTau_1 = recoTau.p4();
+          matchedRecoTaus.push_back(matchedRecoTau_1);
+        }
+        index++;
+      }
+    }
+
+    if (genTauHadronics.size()>1){
+      genTauPt_2=genTauHadronics.at(1).pt();
+      genTauEta_2=genTauHadronics.at(1).eta();
+      genTauPhi_2=genTauHadronics.at(1).phi();
+      int index = 0;
+      for(const auto& recoTau : evt.get(recoTauToken_)){
+        double DR = reco::deltaR(visGenHadronicTaus.at(1), recoTau);
+        if (DR < matchDeltaR && index !=matchIndex){
+          matchDeltaR = DR;
+          matchIndex = index;
+          matchedRecoTau_2 = recoTau.p4();
+          matchedRecoTaus.push_back(matchedRecoTau_2);
+        }
+        index++;
+      }
     }
   }
-
   efficiencyTree->Fill();
   inputRegions.clear();
 }
@@ -926,7 +950,16 @@ void BoostedJetStudies::zeroOutAllVariables(){
   genTauPt_2=-99;
   genTauEta_2=-99;
   genTauPhi_2=-99;
-  matchDR=99;
+
+  visGenTauPt_1=-99;
+  visGenTauEta_1=-99;
+  visGenTauPhi_1=-99;
+
+  visGenTauPt_2=-99;
+  visGenTauEta_2=-99;
+  visGenTauPhi_2=-99;
+
+  matchDeltaR=99;
 }
 
 void BoostedJetStudies::createBranches(TTree *tree){
@@ -981,6 +1014,7 @@ void BoostedJetStudies::createBranches(TTree *tree){
     tree->Branch("genTauPt_2",        &genTauPt_2,       "genTauPt_2/D");
     tree->Branch("genTauEta_2",        &genTauEta_2,       "genTauEta_2/D");
     tree->Branch("genTauPhi_2",        &genTauPhi_2,       "genTauPhi_2/D");
+    tree->Branch("matchedRecoTaus", &matchedRecoTaus);
   }
 
 
