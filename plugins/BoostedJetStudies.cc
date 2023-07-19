@@ -49,6 +49,8 @@
 #include "DataFormats/L1CaloTrigger/interface/L1CaloRegion.h"
 
 #include "DataFormats/Math/interface/LorentzVector.h"
+#include "Math/GenVector/LorentzVector.h"
+//#include "LorentzVector.h"
 
 //#include "L1Trigger/Run3Ntuplizer/plugins/helpers.h"
 
@@ -89,6 +91,7 @@ using namespace l1t;
 using namespace l1tcalo;
 using namespace l1extra;
 using namespace std;
+using namespace ROOT;
 
 bool compareByPt (l1extra::L1JetParticle i, l1extra::L1JetParticle j) { return(i.pt()>j.pt()); };
 
@@ -279,10 +282,10 @@ private:
   std::vector<TLorentzVector> *tauseed  = new std::vector<TLorentzVector>;
   std::vector<TLorentzVector> *ak8Jets  = new std::vector<TLorentzVector>;
   std::vector<TLorentzVector> *subJets  = new std::vector<TLorentzVector>;
-  std::vector<LorentzVector> *matchedRecoTaus = new std::vector<LorentzVector>;
+  std::vector<ROOT::Math::LorentzVector> *matchedRecoTaus = new std::vector<ROOT::Math::LorentzVector>;
 
-  LorentzVector matchedRecoTau_1;
-  LorentzVector matchedRecoTau_2;
+  ROOT::Math::LorentzVector matchedRecoTau_1;
+  ROOT::Math::LorentzVector matchedRecoTau_2;
 
   uint32_t nPumBins;
 
