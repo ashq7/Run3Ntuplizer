@@ -6,6 +6,7 @@
 #include "TFile.h"
 #include "TLorentzVector.h"
 
+
 // user include files
 #include "FWCore/Framework/interface/Frameworkfwd.h"
 //#include "FWCore/Framework/interface/EDAnalyzer.h"
@@ -48,9 +49,10 @@
 #include "DataFormats/L1CaloTrigger/interface/L1CaloCollections.h"
 #include "DataFormats/L1CaloTrigger/interface/L1CaloRegion.h"
 
-#include "DataFormats/Math/interface/LorentzVector.h"
-#include "Math/GenVector/LorentzVector.h"
+//#include "DataFormats/Math/interface/LorentzVector.h"
+//#include "Math/GenVector/LorentzVector.h"
 //#include "LorentzVector.h"
+#include <Math/Vector4D.h>
 
 //#include "L1Trigger/Run3Ntuplizer/plugins/helpers.h"
 
@@ -229,7 +231,7 @@ private:
 
   class GenVisibleTau{
     public:
-      reco::Candidate::LorentzVector p4;
+      ROOT::Math::PtEtaPhiMVector p4;
       int decayMode;
   };
 
@@ -237,6 +239,7 @@ private:
   std::vector<float> recoTauPts;
   std::vector<float> visTauPts;
   std::vector<float> deltaRs;
+  std::vector<float> matchedRecoTaus_Pt;
 
   std::vector<std::array<std::array<std::array<uint32_t, nEtBins>, nCalSideBins>, nCalEtaBins> > ecalLUT;
   std::vector<std::array<std::array<std::array<uint32_t, nEtBins>, nCalSideBins>, nCalEtaBins> > hcalLUT;
@@ -262,6 +265,7 @@ private:
   int decayMode;
   double l1Pt_1, l1Eta_1, l1Phi_1;
   double seedPt_1, seedEta_1, seedPhi_1;
+  double matchedRecoTau_1_Pt, matchedRecoTau_2_Pt;
 
   //reco gen matching
   double genTauPt_1, genTauPt_2, genTauEta_1, genTauEta_2, genTauPhi_1, genTauPhi_2;
@@ -282,10 +286,10 @@ private:
   std::vector<TLorentzVector> *tauseed  = new std::vector<TLorentzVector>;
   std::vector<TLorentzVector> *ak8Jets  = new std::vector<TLorentzVector>;
   std::vector<TLorentzVector> *subJets  = new std::vector<TLorentzVector>;
-  std::vector<ROOT::Math::LorentzVector> *matchedRecoTaus = new std::vector<ROOT::Math::LorentzVector>;
+  std::vector<ROOT::Math::PtEtaPhiMVector> *matchedRecoTaus = new std::vector<ROOT::Math::PtEtaPhiMVector>;
 
-  ROOT::Math::LorentzVector matchedRecoTau_1;
-  ROOT::Math::LorentzVector matchedRecoTau_2;
+  ROOT::Math::PtEtaPhiMVector matchedRecoTau_1;
+  ROOT::Math::PtEtaPhiMVector matchedRecoTau_2;
 
   uint32_t nPumBins;
 
@@ -374,7 +378,7 @@ BoostedJetStudies::BoostedJetStudies(const edm::ParameterSet& iConfig) :
   histo_recoTauPt = tfs_->make<TH1D>("recoTauPt" , "recoTauPt" , 100 , 0 , 100);
   histo_visTauPt = tfs_->make<TH1D>("visTauPt" , "visTauPt" , 100 , 0 , 100);
   histo_allTauPt = tfs_->make<TH1D>("allTauPt", "allTauPt", 100, 0, 100);
-  histo_recoMatchedTauPt = tfs_->make<TH1D>("recoMatchedTauPt", "recoMatchedTauPt", 100, 0, 100);
+  histo_recoMatchedTauPt = tfs_->make<TH1D>("matchedRecoTaus_Pt", "matchedRecoTaus_Pt", 100, 0, 500);
   efficiencyTree = tfs_->make<TTree>("efficiencyTree", "Gen Matched Jet Tree ");
   createBranches(efficiencyTree);
 }
@@ -799,7 +803,6 @@ void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& e
     }
     if(abs(ptr->pdgId())==15){
       genTaus.push_back(*ptr);
-      std::cout<<"size of genTaus at push back: "<<genTaus.size()<<std::endl;
     }
   }
 
@@ -809,7 +812,6 @@ void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& e
   // (2) Find and Sort the 1 Prong, 1 Prong + pi0 and 3 Prong Taus
 
   for(auto genTau: genTaus){
-    std::cout<<"gen Taus auto working"<<std::endl;
     GenVisibleTau temp;
     temp.p4 = getVisMomentum(&genTau, &genParticles);
     temp.decayMode = GetDecayMode(&genTau);
@@ -878,10 +880,12 @@ void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& e
     }
   }  
 
+  std::cout << ">>> Found " << genTauHadronics.size() << " vis gen hadronic taus with the right decay mode and gen daughters" << std::endl;
+
   //PLOT VIS
   // (5) Loop over gen taus, check that they're from the Higgs (and that they decay hadronically - may be redundant)
   // If this is true, perform deltaR matching with the reco taus 
-  for (auto visGenTau: visGenTaus){
+  //for (auto genTauHadronic : genTauHadronics){
     // reco::Candidate::LorentzVector visGenTau= getVisMomentum(&genTau, &genParticles);
     // visGenTaus.push_back(visGenTau);
 
@@ -889,53 +893,71 @@ void BoostedJetStudies::analyze( const edm::Event& evt, const edm::EventSetup& e
     // histo_visTauPt->Fill(visTauPt);
     // visTauPts.push_back(visTauPt);
 
-    // for (const auto& visGenTau: visGenTaus){
-    int visGenMother = visGenTau.motherRef(0)->pdgId();
-    int visGenDaughter = visGenTau.daughterRef(0)->pdgId();
-    if (abs(visGenMother)==25 && abs(genDaughter) != 11 && abs(genDaughter) != 13){
-      visGenHadronicTaus.push_back(visGenTau);
-      if (genTauHiggses.size()==2){
-        visGenDeltaR = reco::deltaR(visGenHadronicTaus.at(0), visGenHadronicTaus.at(1));
-      }
-    }
-    int matchIndex = -99;
-    if (visGenHadronicTaus.size()>0){
-      //visGenTau_1 = visGenHadronicTaus.at(0);
-      visGenTauPt_1= visGenHadronicTaus.at(0).pt();
-      visGenTauEta_1= visGenHadronicTaus.at(0).eta();
-      visGenTauPhi_1= visGenHadronicTaus.at(0).phi();
+    // // for (const auto& visGenTau: visGenTaus){
+    // int visGenMother = genTauHadronic.motherRef(0)->pdgId();
+    // int visGenDaughter = genTauHadronic.daughterRef(0)->pdgId();
+    // if (abs(visGenMother)==25 && abs(genDaughter) != 11 && abs(genDaughter) != 13){
+    //   visGenHadronicTaus.push_back(genTauHadronic);
+    //   if (genTauHiggses.size()==2){
+    //     visGenDeltaR = reco::deltaR(visGenHadronicTaus.at(0), visGenHadronicTaus.at(1));
+    //   }
+    // }
+  int index_of_reco_tau_matched_to_first_gen_tau = -99;
+  int index_of_reco_tau_matched_to_second_gen_tau = -99;
 
-      int index = 0;
-      
-      for(const auto& recoTau : evt.get(recoTauToken_)){
-        double DR = reco::deltaR(visGenHadronicTaus.at(0), recoTau);
-        if (DR < matchDeltaR){
-          matchDeltaR = DR;
-          matchIndex = index;
-          matchedRecoTau_1 = recoTau.p4();
-          matchedRecoTaus.push_back(matchedRecoTau_1);
-        }
-        index++;
-      }
-    }
+  if (genTauHadronics.size() > 0){
+    reco::GenParticle genTauHadronic = genTauHadronics.at(0);
+    reco::Candidate::LorentzVector p4 = getVisMomentum(&genTauHadronic, &genParticles);
 
-    if (genTauHadronics.size()>1){
-      genTauPt_2=genTauHadronics.at(1).pt();
-      genTauEta_2=genTauHadronics.at(1).eta();
-      genTauPhi_2=genTauHadronics.at(1).phi();
-      int index = 0;
-      for(const auto& recoTau : evt.get(recoTauToken_)){
-        double DR = reco::deltaR(visGenHadronicTaus.at(1), recoTau);
-        if (DR < matchDeltaR && index !=matchIndex){
-          matchDeltaR = DR;
-          matchIndex = index;
-          matchedRecoTau_2 = recoTau.p4();
-          matchedRecoTaus.push_back(matchedRecoTau_2);
-        }
-        index++;
+    //visGenTau_1 = visGenHadronicTaus.at(0);
+    visGenTauPt_1= p4.pt();
+    visGenTauEta_1= p4.eta();
+    visGenTauPhi_1= p4.phi();
+
+    int index1 = 0;
+    
+    for(const auto& recoTau : evt.get(recoTauToken_)){
+      double DR = reco::deltaR(p4, recoTau);
+      if (DR < matchDeltaR){
+        matchDeltaR = DR;
+        index_of_reco_tau_matched_to_first_gen_tau = index1;
+        matchedRecoTau_1 = recoTau.p4();
+        matchedRecoTau_1_Pt = recoTau.p4().pt();
       }
+      index1++;
     }
+    //matchedRecoTaus->push_back(matchedRecoTau_1);
+    matchedRecoTaus_Pt.push_back(matchedRecoTau_1_Pt);
+    std::cout << "Filling histo_recoMatchedTauPt with (1) " << matchedRecoTau_1_Pt << std::endl;
+    histo_recoMatchedTauPt->Fill(matchedRecoTau_1_Pt);
   }
+
+  if (genTauHadronics.size()>1){
+    reco::GenParticle genTauHadronic = genTauHadronics.at(1);
+    reco::Candidate::LorentzVector p4 = getVisMomentum(&genTauHadronic, &genParticles);
+
+    genTauPt_2 = p4.pt();
+    genTauEta_2= p4.eta();
+    genTauPhi_2= p4.phi();
+    int index2 = 0;
+    matchDeltaR=99;
+    for(const auto& recoTau : evt.get(recoTauToken_)){
+      double DR = reco::deltaR(p4, recoTau);
+      if (DR < matchDeltaR && (index2 != index_of_reco_tau_matched_to_first_gen_tau)){
+        matchDeltaR = DR;
+        index_of_reco_tau_matched_to_second_gen_tau = index2;
+        matchedRecoTau_2 = recoTau.p4();
+        matchedRecoTau_2_Pt = recoTau.p4().pt();
+      }
+      index2++;
+    }
+    //matchedRecoTaus->push_back(matchedRecoTau_2);
+    matchedRecoTaus_Pt.push_back(matchedRecoTau_2_Pt);
+    std::cout << "Filling histo_recoMatchedTauPt with (2) " << matchedRecoTau_2_Pt << std::endl;
+    histo_recoMatchedTauPt->Fill(matchedRecoTau_2_Pt);
+  }
+  std::cout << ">>> Matched to reco taus " << index_of_reco_tau_matched_to_first_gen_tau << ", " << index_of_reco_tau_matched_to_second_gen_tau << std::endl;
+//}
   efficiencyTree->Fill();
   inputRegions.clear();
 }
@@ -963,6 +985,8 @@ void BoostedJetStudies::zeroOutAllVariables(){
   visGenTauPhi_2=-99;
 
   matchDeltaR=99;
+  matchedRecoTau_1_Pt=-99;
+  matchedRecoTau_2_Pt=-99;
 }
 
 void BoostedJetStudies::createBranches(TTree *tree){
@@ -1017,7 +1041,9 @@ void BoostedJetStudies::createBranches(TTree *tree){
     tree->Branch("genTauPt_2",        &genTauPt_2,       "genTauPt_2/D");
     tree->Branch("genTauEta_2",        &genTauEta_2,       "genTauEta_2/D");
     tree->Branch("genTauPhi_2",        &genTauPhi_2,       "genTauPhi_2/D");
-    tree->Branch("matchedRecoTaus", &matchedRecoTaus);
+    //tree->Branch("matchedRecoTaus", &matchedRecoTaus);
+    tree->Branch("matchedRecoTau_Pt", &matchedRecoTaus_Pt);
+
   }
 
 
